@@ -135,7 +135,7 @@ function MainLayout() {
               setSelectedLanguage(response.language);
               break;
             default:
-              setTranscription(`I heard: "${transcription}"\n\nTry asking a specific question about the code or problem.`);
+              setTranscription(`I heard: "${transcription}"\n\nTry asking a specific question about the code or problem`);
           }
         }
       }
