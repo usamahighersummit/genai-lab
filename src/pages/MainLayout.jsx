@@ -1,7 +1,9 @@
 import React, { useState, useRef } from "react";
-import { Mic, MicOff, Play, Settings, Terminal, ChevronLeft, ChevronRight, Code2, Lightbulb, Info, TestTube, CheckCircle2 } from "lucide-react";
+import { Mic, MicOff, Play, Terminal, ChevronLeft, ChevronRight, Code2, Lightbulb, Info, TestTube, CheckCircle2 } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import { codingQuestions } from "../Constants/questions";
+import AIResponseFormatter from "../Components/MainLayout/AIResponseFormatter";
+import HolographicAI from "../Components/MainLayout/HolographicAI";
 
 function MainLayout() {
   const editorRef = useRef(null);
@@ -11,7 +13,7 @@ function MainLayout() {
   const [output, setOutput] = useState("");
   const [isEditorReady, setIsEditorReady] = useState(false);
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
-  const [transcription, setTranscription] = useState("");
+  const [transcription, setTranscription] = useState(null);
 
   const currentQuestion = codingQuestions[currentQuestionIndex];
 
@@ -77,83 +79,73 @@ function MainLayout() {
     }
   }
 
-  function toggleRecording() {
-    setIsRecording(!isRecording);
-  }
-
-  async function handleVoiceCommand() {
+  async function handleStartRecording() {
     try {
-      setIsProcessingVoice(true);
       setIsRecording(true);
-
-      const recordResponse = await fetch("http://localhost:8000/start-recording", {
+      const response = await fetch("http://localhost:8000/start-recording", {
         method: "POST",
       });
 
-      const recordData = await recordResponse.json();
+      const data = await response.json();
+      if (data.status !== "success") {
+        console.error("Failed to start recording:", data.message);
+        setIsRecording(false);
+      }
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      setIsRecording(false);
+    }
+  }
 
-      if (recordData.status === "success") {
-        const transcription = recordData.transcription;
-        setTranscription(transcription); // Show what was transcribed
+  async function handleStopRecording() {
+    try {
+      setIsProcessingVoice(true);
+      const response = await fetch("http://localhost:8000/stop-recording", {
+        method: "POST",
+      });
 
-        // Get current editor content
-        const currentCode = editorRef.current ? editorRef.current.getValue() : "";
+      const data = await response.json();
+      if (data.status === "success" && data.transcription) {
+        const userQuery = data.transcription;
 
-        // Process the command with context
         const commandResponse = await fetch("http://localhost:8000/process-voice-command", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            command: transcription,
+            command: userQuery,
             currentQuestion: currentQuestion,
-            currentCode: currentCode,
+            currentCode: editorRef.current ? editorRef.current.getValue() : "",
             language: selectedLanguage,
           }),
         });
 
         const commandData = await commandResponse.json();
-
         if (commandData.status === "success") {
-          const response = commandData.response;
-
-          switch (response.action) {
-            case "provide_help":
-              setTranscription(`You asked: ${transcription}\n\nAnswer: ${response.help_text}`);
-              break;
-            case "run_code":
-              handleRunCode();
-              break;
-            case "next_question":
-              handleNextQuestion();
-              break;
-            case "previous_question":
-              handlePreviousQuestion();
-              break;
-            case "change_language":
-              setSelectedLanguage(response.language);
-              break;
-            default:
-              setTranscription(`I heard: "${transcription}"\n\nTry asking a specific question about the code or problem`);
-          }
+          setTranscription({
+            query: userQuery,
+            answer: commandData.response.help_text,
+          });
         }
+      } else {
+        console.error("Failed to stop recording:", data.message);
+        setTranscription(null);
       }
     } catch (error) {
-      console.error("Error processing voice command:", error);
-      setTranscription("Sorry, I encountered an error. Please try again.");
+      console.error("Error stopping recording:", error);
+      setTranscription(null);
     } finally {
       setIsRecording(false);
       setIsProcessingVoice(false);
     }
   }
 
-  // Update the toggleRecording function
   function toggleRecording() {
     if (!isRecording) {
-      handleVoiceCommand();
+      handleStartRecording();
     } else {
-      setIsRecording(false);
+      handleStopRecording();
     }
   }
 
@@ -167,12 +159,6 @@ function MainLayout() {
               <Code2 className="w-8 h-8 text-blue-400" />
               <h1 className="text-2xl font-bold text-white">GenAI Lab</h1>
             </div>
-            {/* <div className="flex items-center gap-4">
-              <span className="text-gray-400 text-sm">Theme: Dark</span>
-              <button className="p-2 rounded-lg hover:bg-gray-700 text-gray-300">
-                <Settings className="w-5 h-5" />
-              </button>
-            </div> */}
           </div>
         </div>
       </header>
@@ -319,9 +305,7 @@ function MainLayout() {
                     padding: { top: 20 },
                     lineNumbers: "on",
                     roundedSelection: false,
-                    scrollBeyondLastLine: false,
                     cursorStyle: "line",
-                    automaticLayout: true,
                     renderLineHighlight: "all",
                   }}
                 />
@@ -352,46 +336,27 @@ function MainLayout() {
               <Mic className="w-5 h-5 text-blue-400" />
               Voice Assistant
             </h2>
-            <div className="flex-1 bg-gray-900/50 rounded-lg p-4 mb-4 overflow-auto border border-gray-700">
+            <div
+              className="flex-1 bg-gray-900/50 rounded-lg p-4 mb-4 overflow-auto border border-gray-700"
+              style={{ display: isProcessingVoice && "flex", alignItems: isProcessingVoice && "center" }}
+            >
               {isProcessingVoice ? (
-                <p className="text-gray-400">Processing voice command...</p>
+                <div>
+                  {" "}
+                  {/* Add fixed height container */}
+                  {/* <p className="text-gray-400 mb-4">Processing voice command...</p> */}
+                  <HolographicAI />
+                </div>
               ) : transcription ? (
                 <div className="space-y-4">
-                  <div className="border-b border-gray-700 pb-3">
-                    <p className="text-gray-400 text-sm mb-2">You asked:</p>
-                    <p className="text-gray-300">{transcription.split("Answer:")[0].replace("You asked:", "").trim()}</p>
+                  <div>
+                    <p className="text-gray-400 font-medium mb-2">You asked:</p>
+                    <p className="text-gray-300 mb-4">{transcription.query}</p>
                   </div>
 
                   <div>
-                    <p className="text-gray-400 text-sm mb-2">Answer:</p>
-                    <div className="prose prose-invert max-w-none">
-                      {transcription.includes("```") ? (
-                        // If the response contains code blocks
-                        transcription
-                          .split("Answer:")[1]
-                          .split("```")
-                          .map((part, index) => {
-                            if (index % 2 === 1) {
-                              // Code block
-                              return (
-                                <pre key={index} className="bg-gray-800 p-3 rounded-md my-2 overflow-x-auto">
-                                  <code className="text-gray-300 text-sm">{part.replace(/^python\n/, "")}</code>
-                                </pre>
-                              );
-                            } else {
-                              // Regular text
-                              return (
-                                <p key={index} className="text-gray-300 my-2">
-                                  {part.trim()}
-                                </p>
-                              );
-                            }
-                          })
-                      ) : (
-                        // If the response is plain text
-                        <p className="text-gray-300">{transcription.split("Answer:")[1]?.trim()}</p>
-                      )}
-                    </div>
+                    <p className="text-gray-400 font-medium mb-2">Answer:</p>
+                    <AIResponseFormatter response={transcription.answer} />
                   </div>
                 </div>
               ) : (
